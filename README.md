@@ -16,12 +16,6 @@ This follows the **inference-time search** approach from [GEPA paper Section 6](
 | **SWE-smith** | Dataset of 52k+ GitHub issues | Provides training/test tasks |
 | **mini-SWE-agent** | Lightweight 100-line coding agent | Executes tasks with optimized prompts |
 
-### Key Insight: No Training Required!
-
-This is **purely inference-time optimization**:
-- mini-SWE-agent uses an LLM (GPT-4, Gemini, etc.) at inference time
-- GEPA uses an LLM to reflect on failures and propose prompt improvements
-- No model weights are trained—only prompts are evolved
 
 ## 🏗️ Architecture
 
@@ -55,8 +49,6 @@ GEPA+SWESMITH/
 ├── scripts/                 # Setup scripts
 ├── gepa_results/            # Output directory for optimization runs
 ├── requirements.txt         # Python dependencies
-├── implementation_plan.md   # Development roadmap
-└── PRD.md                   # Product requirements document
 ```
 
 ## 🚀 Quick Start
@@ -94,7 +86,7 @@ python train.py --generations 5 --train-size 10
 
 ## 🔧 Core Components
 
-### `PygmentsHarness` (src/harness.py)
+### `Harness` (src/harness.py)
 
 Manages the execution of mini-SWE-agent on individual tasks:
 
@@ -104,9 +96,9 @@ harness.run_agent(problem, prompt) # Run agent, get (patch, trace)
 harness.verify(test_cmd)           # Run tests, get (passed, output)
 ```
 
-### `PygmentsAdapter` (src/adapters/pygments_adapter.py)
+### `Adapter` (src/adapters/pygments_adapter.py)
 
-Bridges GEPA and the harness, implementing the required interface:
+Bridges GEPA and the harness, implementing:
 
 - `evaluate()`: Run agent on batch of tasks, return scores + traces
 - `make_reflective_dataset()`: Format feedback for GEPA reflection
@@ -115,16 +107,6 @@ The adapter captures **dual-source feedback** as described in GEPA paper Section
 1. **Agent reasoning traces** (LLM's chain of thought, tool calls)
 2. **Environment feedback** (test errors, stack traces, compilation errors)
 
-## 📊 Supported Models
-
-This project uses LiteLLM, supporting multiple providers:
-
-| Provider | Model | Free Tier |
-|----------|-------|-----------|
-| Google | `gemini/gemini-2.0-flash` | ✅ Yes |
-| Groq | `groq/llama-3.3-70b-versatile` | ✅ Yes |
-| OpenAI | `gpt-4o` | ❌ No |
-| Anthropic | `claude-3-5-sonnet-20241022` | ❌ No |
 
 ## 📚 References
 
@@ -133,12 +115,5 @@ This project uses LiteLLM, supporting multiple providers:
 - **SWE-smith**: [swesmith.com](https://swesmith.com)
 - **mini-SWE-agent**: [github.com/SWE-agent/mini-swe-agent](https://github.com/SWE-agent/mini-swe-agent)
 
-## ⚠️ Notes
 
-- **Docker + Linux required** for full SWE-smith execution environments
-- **macOS compatibility**: Data loading and basic testing work, but full container-based execution requires Linux
-- **API costs**: A full optimization run (~5 generations, ~10 tasks) costs approximately $1-5 depending on the model
 
----
-
-*This project integrates three cutting-edge tools for AI-assisted software engineering research.*
