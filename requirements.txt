@@ -1,0 +1,22 @@
+# GEPA + SWE-smith + Mini-SWE-Agent Research Environment
+# Core dependencies for AI/ML research with software engineering agents
+
+# GEPA - Genetic-Pareto prompt optimization framework
+gepa
+
+# Mini-SWE-Agent - Lightweight 100-line agent for solving GitHub issues
+mini-swe-agent
+
+# HuggingFace datasets - For loading SWE-smith training data
+datasets
+
+# LiteLLM - LLM API abstraction layer (used by mini-swe-agent)
+litellm
+
+# Environment variable management
+python-dotenv
+
+# Additional utilities for research
+pandas
+numpy
+tqdm

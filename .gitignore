@@ -1,0 +1,63 @@
+# ================================
+# GEPA + SWE-smith Integration
+# .gitignore
+# ================================
+
+# ----- Secrets & Environment -----
+.env
+.env.local
+*.env
+
+# ----- Python -----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# ----- Virtual Environment -----
+.venv/
+venv/
+ENV/
+env/
+
+# ----- IDE -----
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# ----- GEPA Results (generated) -----
+# Keep empty directory but ignore contents
+gepa_results/*.log
+gepa_results/*.bin
+gepa_results/*.txt
+gepa_results/generated_best_outputs_valset/
+
+# ----- Workspace repos (cloned for testing) -----
+/tmp/gepa_workenvs/
+
+# ----- Misc -----
+*.log
+*.tmp
+.cache/
+
+# Internal planning docs
+PRD.md
