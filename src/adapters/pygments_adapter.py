@@ -1,9 +1,11 @@
 from typing import Any, Mapping, Sequence, List, Dict
 from dataclasses import dataclass
 import json
+import sys
 
 from gepa.core.adapter import EvaluationBatch
 from src.harness import PygmentsHarness
+from src.cost_tracker import get_tracker
 
 # Define types
 DataInst = Dict[str, Any]  # SWESmith task instance
@@ -15,6 +17,8 @@ class PygmentsAdapter:
         self.harness = PygmentsHarness(workspace_root=workspace_root)
         self.model_name = model_name
         self.propose_new_texts = None # Default GEPA proposer
+        self.tracker = get_tracker()
+        self.task_count = 0
 
 
     def evaluate(
@@ -30,7 +34,13 @@ class PygmentsAdapter:
         
         system_prompt = candidate.get("system_prompt", "You are a helpful software engineering assistant.")
 
-        for task in batch:
+        print(f"\n{'='*70}")
+        print(f"Evaluating batch of {len(batch)} tasks...")
+        print(f"{'='*70}\n")
+
+        for i, task in enumerate(batch):
+            self.task_count += 1
+            print(f"[Task {i+1}/{len(batch)}] {task.get('instance_id', 'unknown')}", end="", flush=True)
             # 1. Setup Environment
             # SWESmith 'repo' field often looks like 'swesmith/pygments__pygments.27649ebb'
             # We can extract the commit hash from there if base_commit is missing.
@@ -52,7 +62,22 @@ class PygmentsAdapter:
             # 2. Run Agent
             problem = task["problem_statement"]
             # harness.run_agent returns: (patch, agent_reasoning_trace)
+
+            # Estimate tokens for logging (rough approximation)
+            input_tokens = len(system_prompt.split()) + len(problem.split()) * 3
+
             patch, agent_reasoning_trace = self.harness.run_agent(problem, system_prompt, model_name=self.model_name)
+
+            # Estimate output tokens
+            output_tokens = len(agent_reasoning_trace.split()) + len(patch.split())
+
+            # Log API usage
+            self.tracker.log_api_call(
+                model_name=self.model_name,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                operation=f"agent_run_task_{self.task_count}"
+            )
 
             # 3. Verify with tests (captures environment feedback)
             has_patch = len(patch.strip()) > 0
@@ -77,6 +102,11 @@ class PygmentsAdapter:
             outputs.append({"patch": patch, "success": passed})
             scores.append(score)
 
+            # Print result
+            status = "✓ PASS" if passed else "✗ FAIL"
+            print(f" - {status}")
+            sys.stdout.flush()
+
             if capture_traces:
                 trajectories.append({
                     "agent_reasoning_trace": agent_reasoning_trace,
@@ -89,6 +119,11 @@ class PygmentsAdapter:
                 
             # Cleanup
             self.harness.cleanup()
+
+        # Print batch summary
+        pass_count = sum(1 for s in scores if s == 1.0)
+        print(f"\nBatch complete: {pass_count}/{len(batch)} passed ({pass_count/len(batch)*100:.1f}%)")
+        print(f"{'='*70}\n")
 
         return EvaluationBatch(
             outputs=outputs,

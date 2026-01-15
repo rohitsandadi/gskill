@@ -40,18 +40,71 @@ This follows the **inference-time search** approach from [GEPA paper Section 6](
 
 ```
 GEPA+SWESMITH/
-├── train.py                 # Main entry point for GEPA optimization
-├── src/
-│   ├── harness.py           # PygmentsHarness: runs agent on tasks
+├── requirements.txt              # Python dependencies
+├── GUIDE.md                      # Quick reference (no fluff)
+├── README.md                     # This file
+├── QUICKSTART.md                 # Detailed workflow
+├── CLAUDE.md                     # Technical documentation
+│
+├── src/                          # All source code
+│   ├── train.py                 # Main: GEPA optimization
+│   ├── split_dataset.py         # Create train/val/test splits
+│   ├── evaluate_prompts.py      # Validate improvements
+│   ├── cost_estimate.py         # Estimate API costs
+│   ├── harness.py               # Runs mini-SWE-agent on tasks
+│   ├── cost_tracker.py          # Track API costs during runs
 │   └── adapters/
 │       └── pygments_adapter.py  # GEPA adapter for SWE-smith
-├── examples/                # Example scripts and utilities
-├── scripts/                 # Setup scripts
-├── gepa_results/            # Output directory for optimization runs
-├── requirements.txt         # Python dependencies
+│
+├── data/                         # Dataset (generated)
+│   ├── pygments_train.json      # ~780 tasks (65%)
+│   ├── pygments_val.json        # ~60 tasks (5%)
+│   └── pygments_test.json       # ~360 tasks (30%)
+│
+├── gepa_results/                 # Optimization outputs
+├── examples/                     # Example scripts
+├── scripts/                      # Setup scripts
+└── archive/                      # Old development files
 ```
 
 ## 🚀 Quick Start
+
+### ⚡ New: Cost-Aware Workflow
+
+**IMPORTANT**: Start with the free tier to validate GEPA works before spending money!
+
+```bash
+# 1. See estimated costs for different experiment sizes
+python src/cost_estimate.py
+
+# 2. Setup environment (one-time)
+bash scripts/setup_envs.sh
+python src/split_dataset.py  # Creates ~780 train, ~60 val, ~360 test
+
+# 3. Validate with FREE Gemini (no cost!)
+python src/train.py --use-split --train-size 10 --generations 3
+
+# 4. Check if GEPA actually improved the prompts
+python src/evaluate_prompts.py --split val --limit 10
+
+# 5. If it works, scale up!
+python src/train.py --use-split --train-size 100 --generations 10 --model "gpt-4o-mini"
+```
+
+📖 **See [QUICKSTART.md](QUICKSTART.md) for detailed walkthrough**
+
+### 📚 Documentation
+
+- **[GUIDE.md](GUIDE.md)** - Quick reference (no fluff)
+- **[QUICKSTART.md](QUICKSTART.md)** - Detailed workflow
+- **[CLAUDE.md](CLAUDE.md)** - Technical documentation
+
+### 🛠️ Key Scripts (in src/)
+
+- **train.py** - Run GEPA optimization
+- **split_dataset.py** - Create train/val/test splits
+- **evaluate_prompts.py** - Validate improvements
+- **cost_estimate.py** - Estimate API costs
 
 ### 1. Setup Environment
 
@@ -62,26 +115,30 @@ source .venv/bin/activate
 
 # Install dependencies
 pip install -r requirements.txt
-```
 
-### 2. Configure API Keys
-
-```bash
-# Copy template and add your API key
+# Configure API keys
 cp .env.example .env
-# Edit .env with your GOOGLE_API_KEY (Gemini) or OPENAI_API_KEY
+# Edit .env with your GOOGLE_API_KEY (Gemini - FREE!) or OPENAI_API_KEY
 ```
 
-### 3. Run Smoke Test
+### 2. Prepare Dataset
 
 ```bash
-python train.py --smoke-test
+# Clone Pygments repository
+bash scripts/setup_envs.sh
+
+# Split into train/val/test (creates ~360 test samples)
+python src/split_dataset.py
 ```
 
-### 4. Run Full Optimization
+### 3. Run GEPA Optimization
 
 ```bash
-python train.py --generations 5 --train-size 10
+# Start with free tier validation
+python src/train.py --use-split --train-size 10 --generations 3
+
+# Evaluate improvement
+python src/evaluate_prompts.py --split val --limit 10
 ```
 
 ## 🔧 Core Components

@@ -26,7 +26,7 @@ class PygmentsHarness:
         # Checkout commit
         subprocess.run(["git", "checkout", base_commit], cwd=self.workspace_root, check=True)
 
-    def run_agent(self, problem_statement: str, system_prompt: str, model_name: str = "gemini/gemini-1.5-flash") -> Tuple[str, str]:
+    def run_agent(self, problem_statement: str, system_prompt: str, model_name: str = "gemini/gemma-3-4b-it") -> Tuple[str, str]:
         """Run the agent and return (patch, conversation_trace)."""
         
         # Initialize Agent with the optimized prompt
