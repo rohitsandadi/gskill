@@ -4,7 +4,7 @@ import json
 import sys
 
 from gepa.core.adapter import EvaluationBatch
-from src.harness import PygmentsHarness
+from src.swe_harness import SWEHarness
 from src.cost_tracker import get_tracker
 
 # Define types
@@ -12,9 +12,9 @@ DataInst = Dict[str, Any]  # SWESmith task instance
 Trajectory = Dict[str, Any] # Agent trace and logs
 RolloutOutput = Dict[str, Any] # Patch and status
 
-class PygmentsAdapter:
+class SWEAdapter:
     def __init__(self, workspace_root: str = "/tmp/gepa_workenvs/pygments", model_name: str = "gpt-4o"):
-        self.harness = PygmentsHarness(workspace_root=workspace_root)
+        self.harness = SWEHarness(workspace_root=workspace_root)
         self.model_name = model_name
         self.propose_new_texts = None # Default GEPA proposer
         self.tracker = get_tracker()
@@ -57,8 +57,11 @@ class PygmentsAdapter:
                     print(f"WARNING: Could not determine base commit for {task.get('instance_id')}. Using HEAD.")
                     base_commit = "master"
             
-            self.harness.setup_task(base_commit)
-            
+            # Get the bug patch from the task (SWE-smith's synthetic bug)
+            bug_patch = task.get("patch", "")
+
+            self.harness.setup_task(base_commit, bug_patch=bug_patch)
+
             # 2. Run Agent
             problem = task["problem_statement"]
             # harness.run_agent returns: (patch, agent_reasoning_trace)
@@ -91,11 +94,47 @@ class PygmentsAdapter:
                 feedback_msg = "Agent did not produce any valid patch (git diff was empty)."
                 test_verification_output = "No patch to test."
             else:
-                # Extract test command from task if available, default to pytest
-                test_cmd = task.get("test_cmd", "pytest")
-                # verify now returns (passed, test_output)
-                passed, test_verification_output = self.harness.verify(test_cmd=test_cmd)
-                feedback_msg = "Tests passed." if passed else "Tests failed after applying patch."
+                # === FAIL_TO_PASS Tests ===
+                # These tests should fail before the fix and pass after
+                fail_to_pass = task.get("FAIL_TO_PASS", [])
+                if fail_to_pass:
+                    fail_test_cmd = f"pytest {' '.join(fail_to_pass)} -v"
+                else:
+                    print(f"  WARNING: No FAIL_TO_PASS tests for {task.get('instance_id')}. Using generic pytest.")
+                    fail_test_cmd = "pytest"
+                
+                # Run FAIL_TO_PASS tests
+                f2p_passed, f2p_output = self.harness.verify(test_cmd=fail_test_cmd)
+                test_verification_output = f"=== FAIL_TO_PASS TESTS ===\n{f2p_output}"
+                
+                if not f2p_passed:
+                    passed = False
+                    feedback_msg = "FAIL_TO_PASS tests failed - the fix does not solve the issue."
+                else:
+                    # === PASS_TO_PASS Tests (Regression Check) ===
+                    # These tests should continue to pass after the fix (no regressions)
+                    pass_to_pass = task.get("PASS_TO_PASS", [])
+                    
+                    if pass_to_pass:
+                        # Sample up to 10 tests to avoid timeout (full test would take too long)
+                        sample_size = min(10, len(pass_to_pass))
+                        sampled_tests = pass_to_pass[:sample_size]
+                        pass_test_cmd = f"pytest {' '.join(sampled_tests)} -v --timeout=60"
+                        
+                        # Run PASS_TO_PASS tests
+                        p2p_passed, p2p_output = self.harness.verify(test_cmd=pass_test_cmd)
+                        test_verification_output += f"\n\n=== PASS_TO_PASS TESTS (sampled {sample_size}/{len(pass_to_pass)}) ===\n{p2p_output}"
+                        
+                        if not p2p_passed:
+                            passed = False
+                            feedback_msg = f"PASS_TO_PASS regression failed - the fix breaks existing tests."
+                        else:
+                            passed = True
+                            feedback_msg = "All tests passed (FAIL_TO_PASS fixed + PASS_TO_PASS still passing)."
+                    else:
+                        # No PASS_TO_PASS tests provided - just use FAIL_TO_PASS result
+                        passed = True
+                        feedback_msg = "FAIL_TO_PASS tests passed. No PASS_TO_PASS tests to check."
 
             score = 1.0 if passed else 0.0
 

@@ -6,7 +6,7 @@ This script validates that GEPA is actually improving the prompts.
 import json
 import argparse
 from pathlib import Path
-from src.adapters.pygments_adapter import PygmentsAdapter
+from src.adapters.swe_adapter import SWEAdapter
 
 def load_split(split_name="test"):
     """Load a pre-split dataset."""
@@ -38,7 +38,7 @@ def evaluate_prompt(prompt_text, split_name="test", limit=None, model_name="gemi
     print("-" * 60)
 
     # Create adapter
-    adapter = PygmentsAdapter(
+    adapter = SWEAdapter(
         workspace_root="/tmp/gepa_workenvs/pygments",
         model_name=model_name
     )
@@ -127,7 +127,7 @@ def main():
         # Use default baseline for testing
         baseline = """
 You are an autonomous software engineer.
-You will be given a specific issue to fix in the 'pygments' repository.
+You will be given a specific issue to fix in a software repository.
 You have access to the codebase and can write files and run commands.
 Your goal is to reproduce the issue (if possible) and then fix it.
 You MUST generate a patch using `git diff` implicitly by changing files.

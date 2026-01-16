@@ -4,9 +4,18 @@ import json
 import argparse
 import logging
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
 from datasets import load_dataset
 from gepa.api import optimize
-from src.adapters.pygments_adapter import PygmentsAdapter
+from gepa.utils.stop_condition import (
+    TimeoutStopCondition,
+    NoImprovementStopper,
+)
+from src.adapters.swe_adapter import SWEAdapter
 from src.cost_tracker import get_tracker
 
 def load_split_data(split_name="train", limit=None):
@@ -53,11 +62,18 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--generations", type=int, default=2, help="Number of GEPA generations")
     parser.add_argument("--train-size", type=int, default=5, help="Number of training examples")
+    parser.add_argument("--val-size", type=int, default=5, help="Number of validation examples for Pareto selection")
     parser.add_argument("--workspace", type=str, default="/tmp/gepa_workenvs/pygments")
-    parser.add_argument("--model", type=str, default="gemini/gemma-3-27b-it", help="Model to use (default: gemini/gemma-3-27b-it - 14.4k req/day)")
+    parser.add_argument("--model", type=str, default="gemini/gemma-3-27b-it", 
+                        help="Agent model for running tasks (default: gemini/gemma-3-27b-it)")
+    parser.add_argument("--reflection-model", type=str, default=None,
+                        help="Model for GEPA reflection/prompt optimization (default: same as --model)")
     parser.add_argument("--smoke-test", action="store_true", help="Run a quick smoke test")
     parser.add_argument("--use-split", action="store_true", help="Use pre-split train data from data/ directory")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose logging")
+    parser.add_argument("--timeout", type=int, default=3600, help="Max seconds to run (default: 1 hour)")
+    parser.add_argument("--stop-if-no-improvement", type=int, default=10, help="Stop after N iterations without improvement")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
     args = parser.parse_args()
 
     # Setup logging
@@ -94,24 +110,27 @@ def main():
     print(f"   Training log: {log_file}")
     print(f"   Cost summary: {log_dir / 'cost_summary.txt'}\n")
 
-    # 1. Load Data
+    # 1. Load Data (train and validation for Pareto selection)
     if args.use_split:
         print("\n" + "="*70)
-        print("Using pre-split train dataset")
+        print("Using pre-split datasets")
         print("="*70)
         train_data = load_split_data(split_name="train", limit=args.train_size)
+        val_data = load_split_data(split_name="val", limit=args.val_size)
     else:
         print("\n" + "="*70)
         print("Loading data via streaming (not using pre-split)")
         print("Recommendation: Run 'python split_dataset.py' and use --use-split flag")
         print("="*70)
         train_data = load_pygments_data_streaming(limit=args.train_size)
+        # Use subset for validation when streaming
+        val_data = train_data[:min(args.val_size, len(train_data))]
 
-    print(f"Loaded {len(train_data)} training examples.")
-    logger.info(f"Training data size: {len(train_data)}")
+    print(f"Loaded {len(train_data)} training, {len(val_data)} validation examples.")
+    logger.info(f"Training data size: {len(train_data)}, Validation size: {len(val_data)}")
 
     # 2. Setup Adapter
-    adapter = PygmentsAdapter(workspace_root=args.workspace, model_name=args.model)
+    adapter = SWEAdapter(workspace_root=args.workspace, model_name=args.model)
     logger.info(f"Model: {args.model}")
     logger.info(f"Workspace: {args.workspace}")
 
@@ -119,7 +138,7 @@ def main():
     # We use a simplified version of the standard SWE-agent prompt
     initial_prompt = """
 You are an autonomous software engineer.
-You will be given a specific issue to fix in the 'pygments' repository.
+You will be given a specific issue to fix in a software repository.
 You have access to the codebase and can write files and run commands.
 Your goal is to reproduce the issue (if possible) and then fix it.
 You MUST generate a patch using `git diff` implicitly by changing files.
@@ -128,12 +147,22 @@ When you are done, submit your changes.
     
     seed_candidate = {"system_prompt": initial_prompt}
 
-    # 4. Run GEPA
+    # 4. Setup stop conditions
+    stop_callbacks = [
+        TimeoutStopCondition(timeout_seconds=args.timeout),
+        NoImprovementStopper(max_iterations_without_improvement=args.stop_if_no_improvement),
+    ]
+
+    # 5. Run GEPA
     print("\n" + "="*70)
+    # Determine reflection model (can be different from agent model)
+    reflection_model = args.reflection_model or args.model
+
     print("Starting GEPA Optimization...")
     print("="*70)
     logger.info(f"Generations: {args.generations}")
-    logger.info(f"Reflection model: {args.model}")
+    logger.info(f"Agent model: {args.model}")
+    logger.info(f"Reflection model: {reflection_model}")
     logger.info(f"Initial prompt: {initial_prompt[:100]}...")
 
     print(f"\n📊 Watch progress:")
@@ -144,14 +173,20 @@ When you are done, submit your changes.
     result = optimize(
         seed_candidate=seed_candidate,
         trainset=train_data,
+        valset=val_data,  # Critical for Pareto selection
         adapter=adapter,
         # GEPA hyperparameters
-        reflection_lm=args.model,
-        max_metric_calls=args.generations * args.train_size * 2, # Rough budget
-        reflection_minibatch_size=1, # Small batch for reflection
+        reflection_lm=reflection_model,  # Model for reflection (can differ from agent)
+        max_metric_calls=args.generations * args.train_size * 2,  # Rough budget
+        reflection_minibatch_size=3,  # GEPA default (was 1)
+        candidate_selection_strategy="pareto",  # Explicit Pareto selection
+        skip_perfect_score=True,  # Skip reflection on perfect scores
+        perfect_score=1.0,
         use_wandb=False,
         run_dir="gepa_results",
-        stop_callbacks=[] # handled by max_metric_calls
+        display_progress_bar=True,  # Nice progress bar
+        seed=args.seed,  # For reproducibility
+        stop_callbacks=stop_callbacks,
     )
 
     logger.info("GEPA optimization completed")
@@ -173,16 +208,16 @@ When you are done, submit your changes.
     print(f"\n✓ Best prompt saved to: {best_prompt_file}")
     print(f"\nNext steps:")
     print(f"  1. Evaluate on test set:")
-    print(f"     python evaluate_prompts.py --split test --limit 20")
+    print(f"     python src/evaluate_prompts.py --split test --limit 20")
     print(f"  2. Compare baseline vs optimized:")
-    print(f"     python evaluate_prompts.py --baseline baseline_prompt.txt --optimized {best_prompt_file}")
+    print(f"     python src/evaluate_prompts.py --baseline baseline_prompt.txt --optimized {best_prompt_file}")
     print(f"  3. Review full results in: gepa_results/")
 
     # Also save baseline for comparison
     baseline_file = output_dir / "baseline_prompt.txt"
     if not baseline_file.exists():
         baseline_prompt = """You are an autonomous software engineer.
-You will be given a specific issue to fix in the 'pygments' repository.
+You will be given a specific issue to fix in a software repository.
 You have access to the codebase and can write files and run commands.
 Your goal is to reproduce the issue (if possible) and then fix it.
 You MUST generate a patch using `git diff` implicitly by changing files.
@@ -200,9 +235,6 @@ When you are done, submit your changes."""
 
     logger.info("Training session complete")
     logger.info(final_summary)
-
-    print("\n📊 To verify GEPA worked:")
-    print(f"   python analyze_gepa_run.py")
 
 if __name__ == "__main__":
     main()
