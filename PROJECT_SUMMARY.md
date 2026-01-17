@@ -44,6 +44,26 @@ Data is pre-split into train/val/test in `data/`. The validation set is critical
 - `step_limit=30` to bound per-task cost
 - Trace capture includes both reasoning chain and environment feedback
 
+### Parallelization
+
+**Reference:** GEPA's `terminal_bench_adapter` uses `n_concurrent=6` for parallel task execution.
+
+The adapter maintains a pool of harness instances, each with its own git workspace copy:
+
+```
+/tmp/gepa_workenvs/pygments_0  → harness[0]
+/tmp/gepa_workenvs/pygments_1  → harness[1]
+...
+/tmp/gepa_workenvs/pygments_5  → harness[5]
+```
+
+`evaluate()` uses `ThreadPoolExecutor` to process tasks concurrently. Each worker:
+1. Acquires a harness from the pool (thread-safe via lock)
+2. Runs the agent in its isolated workspace
+3. Returns results and releases the harness
+
+Results are collected by original submission index to preserve ordering. Setup script: `scripts/setup_parallel_workspaces.sh`.
+
 ## Usage
 
 ```bash

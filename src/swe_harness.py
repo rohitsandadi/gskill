@@ -50,12 +50,17 @@ class SWEHarness:
             else:
                 print(f"  Bug patch applied successfully")
 
-    def run_agent(self, problem_statement: str, system_prompt: str, model_name: str = "gemini/gemma-3-4b-it") -> Tuple[str, str]:
-        """Run the agent and return (patch, conversation_trace).
-        
-        The system_prompt from GEPA is used as additional context/instructions 
+    def run_agent(self, problem_statement: str, system_prompt: str, model_name: str = "gemini/gemma-3-4b-it") -> Tuple[str, str, dict]:
+        """Run the agent and return (patch, conversation_trace, metrics).
+
+        The system_prompt from GEPA is used as additional context/instructions
         that get prepended to the problem statement. This preserves mini-swe-agent's
         built-in templates which contain essential formatting instructions.
+
+        Returns:
+            patch: The git diff of changes made
+            trace: Full conversation trace
+            metrics: Dict with 'steps' (number of agent turns) and 'tokens' (estimated)
         """
         
         # Load the full mini-swe-agent config (includes proper system template with
@@ -102,6 +107,18 @@ class SWEHarness:
                 for msg in agent.messages
             ])
 
+            # Calculate metrics
+            num_steps = len([m for m in agent.messages if m.get('role') == 'assistant'])
+            # Estimate tokens (rough: 4 chars per token)
+            total_chars = sum(len(m.get('content', '')) for m in agent.messages)
+            estimated_tokens = total_chars // 4
+
+            metrics = {
+                "steps": num_steps,
+                "estimated_tokens": estimated_tokens,
+                "num_messages": len(agent.messages)
+            }
+
             # Generate patch of changes
             diff_proc = subprocess.run(
                 ["git", "diff"],
@@ -109,10 +126,10 @@ class SWEHarness:
                 capture_output=True,
                 text=True
             )
-            return diff_proc.stdout, trace
-            
+            return diff_proc.stdout, trace, metrics
+
         except Exception as e:
-            return "", f"Agent crashed: {str(e)}"
+            return "", f"Agent crashed: {str(e)}", {"steps": 0, "estimated_tokens": 0, "num_messages": 0}
 
     def verify(self, test_cmd: str = "pytest") -> Tuple[bool, str]:
         """Run verification tests and return (passed, output).
