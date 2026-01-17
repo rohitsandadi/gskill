@@ -109,13 +109,20 @@ class SWEHarness:
 
             # Calculate metrics
             num_steps = len([m for m in agent.messages if m.get('role') == 'assistant'])
-            # Estimate tokens (rough: 4 chars per token)
-            total_chars = sum(len(m.get('content', '')) for m in agent.messages)
-            estimated_tokens = total_chars // 4
+            
+            # Use LiteLLM's token counter for accurate count
+            try:
+                import litellm
+                # token_counter expects messages with 'role' and 'content' keys
+                token_count = litellm.token_counter(model=model_name, messages=agent.messages)
+            except Exception:
+                # Fallback to estimate if tokenizer fails
+                total_chars = sum(len(m.get('content', '')) for m in agent.messages)
+                token_count = total_chars // 4
 
             metrics = {
                 "steps": num_steps,
-                "estimated_tokens": estimated_tokens,
+                "estimated_tokens": token_count,
                 "num_messages": len(agent.messages)
             }
 
