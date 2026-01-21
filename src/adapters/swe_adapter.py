@@ -127,7 +127,7 @@ class SWEAdapter:
                     if pass_to_pass:
                         sample_size = min(10, len(pass_to_pass))
                         sampled_tests = pass_to_pass[:sample_size]
-                        pass_test_cmd = f"pytest {' '.join(sampled_tests)} -v --timeout=60"
+                        pass_test_cmd = f"pytest {' '.join(sampled_tests)} -v"
                         
                         p2p_passed, p2p_output = harness.verify(test_cmd=pass_test_cmd)
                         test_verification_output += f"\n\n=== PASS_TO_PASS TESTS (sampled {sample_size}/{len(pass_to_pass)}) ===\n{p2p_output}"
