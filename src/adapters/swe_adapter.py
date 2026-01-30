@@ -96,8 +96,8 @@ class SWEAdapter:
                 feedback_msg = "Agent did not produce any valid patch (git diff was empty)."
                 test_verification_output = "No patch to test."
             else:
-                # FAIL_TO_PASS Tests - use repo profile's test command
-                f2p_passed, f2p_output = harness.verify(f2p_only=True)
+                # Use SWE-smith's run_patch_in_container for proper verification
+                f2p_passed, f2p_output = harness.verify_with_patch(patch, f2p_only=True)
                 test_verification_output = f"=== FAIL_TO_PASS TESTS ===\n{f2p_output}"
                 
                 if not f2p_passed:
@@ -108,8 +108,8 @@ class SWEAdapter:
                     pass_to_pass = task.get("PASS_TO_PASS", [])
                     
                     if pass_to_pass:
-                        # Run full test command (includes both f2p and p2p)
-                        p2p_passed, p2p_output = harness.verify(f2p_only=False)
+                        # Run full test (includes both f2p and p2p)
+                        p2p_passed, p2p_output = harness.verify_with_patch(patch, f2p_only=False)
                         test_verification_output += f"\n\n=== FULL TEST SUITE ===\n{p2p_output}"
                         
                         if not p2p_passed:

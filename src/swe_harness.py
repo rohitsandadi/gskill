@@ -2,7 +2,9 @@ import gc
 import os
 import yaml
 import logging
+import uuid
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Tuple, Dict, Any
 
 # Suppress verbose LiteLLM logging
@@ -18,6 +20,8 @@ from minisweagent.models.litellm_model import LitellmModel
 from minisweagent.environments.docker import DockerEnvironment, DockerEnvironmentConfig
 
 from swesmith.profiles import registry
+from swesmith.harness.utils import run_patch_in_container
+from swebench.harness.constants import KEY_INSTANCE_ID, LOG_TEST_OUTPUT
 import docker
 
 
@@ -109,22 +113,18 @@ class SWEHarness:
         # Get container from SWE-smith
         # The container comes with:
         # - Repository cloned at /testbed
-        # - Correct commit checked out
-        # - Bug patch already applied
+        # - Instance branch checked out at HEAD (tests removed - agent can't see them)
         # - All dependencies installed
+        # 
+        # NOTE: SWE-smith branch structure:
+        # - HEAD: Bug commit WITHOUT test files (for agent work)
+        # - HEAD~1: Bug commit WITH test files (for evaluation)
+        # The agent works at HEAD. Verification uses run_patch_in_container which
+        # handles the proper checkout to HEAD~1 for testing.
         self.repo_profile = registry.get_from_inst(task_instance)
         self.current_task = task_instance
         self.container = self.repo_profile.get_container(task_instance)
         print(f"  Docker container created: {self.container.id[:12]}")
-        
-        # Debug: Verify container is running and accessible
-        try:
-            status = self.container.status
-            result = self.container.exec_run("pwd", workdir="/testbed")
-            pwd_output = result.output.decode().strip() if result.output else "N/A"
-            print(f"  Container status: {status}, cwd: {pwd_output}")
-        except Exception as e:
-            print(f"  WARNING: Container verification failed: {e}")
         
     def run_agent(self, problem_statement: str, skills: str, model_name: str = "gemini/gemini-2.0-flash-exp") -> Tuple[str, str, dict]:
         """Run the agent in Docker container and return (patch, conversation_trace, metrics).
@@ -223,60 +223,68 @@ class SWEHarness:
             gc.collect()  # Clean up even on error
             return "", f"Agent crashed: {str(e)}\n\nTraceback:\n{error_trace}", {"steps": 0, "estimated_tokens": 0, "num_messages": 0}
 
-    def get_test_cmd(self, f2p_only: bool = False) -> str:
-        """Get the proper test command from the repo profile.
+    def verify_with_patch(self, patch: str, f2p_only: bool = True, timeout: int = 300) -> Tuple[bool, str]:
+        """Verify a patch using SWE-smith's run_patch_in_container.
         
-        This uses SWE-smith's repo profile which knows how to:
-        - Activate the correct conda environment
-        - Run the right test framework (pytest, cargo test, npm test, etc.)
-        - Pass the correct test files
-        """
-        if self.repo_profile and self.current_task:
-            test_cmd, _ = self.repo_profile.get_test_cmd(self.current_task, f2p_only=f2p_only)
-            return test_cmd
-        # Fallback for Python repos
-        return "source /opt/miniconda3/bin/activate; conda activate testbed; python -m pytest -v"
-
-    def verify(self, test_cmd: str = None, f2p_only: bool = False) -> Tuple[bool, str]:
-        """Run verification tests in Docker container and return (passed, output).
-
+        This is the proper way to evaluate patches - it:
+        1. Creates a fresh container
+        2. Checks out the correct commit with test files
+        3. Applies the patch
+        4. Runs the appropriate tests
+        5. Cleans up
+        
         Args:
-            test_cmd: Optional custom test command. If None, uses repo profile's test command.
-            f2p_only: If True and test_cmd is None, only run FAIL_TO_PASS tests.
-
-        Returns both the pass/fail status and the full test output,
-        which has info like:
-        - Test failure messages
-        - Stack traces
-        - Compilation errors
-        - Expected vs actual values
+            patch: The git diff patch to apply and test
+            f2p_only: If True, only run FAIL_TO_PASS tests
+            timeout: Test timeout in seconds
+            
+        Returns:
+            (passed, test_output) tuple
         """
-        # Get test command from repo profile if not provided
-        if test_cmd is None:
-            test_cmd = self.get_test_cmd(f2p_only=f2p_only)
+        if not self.current_task:
+            return False, "No task set up"
         
-        # Run tests in Docker container using bash shell
-        # This is needed because test_cmd may contain shell commands like 'source' and ';'
-        result = self.container.exec_run(
-            ["bash", "-c", test_cmd],
-            workdir="/testbed",
-            demux=True,  # Separate stdout/stderr
-        )
+        instance_id = self.current_task.get(KEY_INSTANCE_ID, "unknown")
+        run_id = f"gepa_{uuid.uuid4().hex[:8]}"
+        log_dir = Path("gepa_results/eval_logs")
         
-        exit_code = result.exit_code
-        stdout = result.output[0].decode() if result.output[0] else ""
-        stderr = result.output[1].decode() if result.output[1] else ""
-        
-        test_output = f"=== TEST COMMAND: {test_cmd} ===\n"
-        test_output += f"=== RETURN CODE: {exit_code} ===\n\n"
-        
-        if stdout:
-            test_output += "=== STDOUT ===\n" + stdout + "\n"
-        if stderr:
-            test_output += "=== STDERR ===\n" + stderr + "\n"
-        
-        passed = exit_code == 0
-        return passed, test_output
+        try:
+            result = run_patch_in_container(
+                instance=self.current_task,
+                run_id=run_id,
+                log_dir=log_dir,
+                timeout=timeout,
+                patch=patch if patch.strip() else None,
+                commit=instance_id,  # Checkout the instance branch
+                f2p_only=f2p_only,
+                is_gold=False,  # We're testing a fix, not the gold solution
+            )
+            
+            if result is None:
+                return False, "run_patch_in_container returned None (error occurred)"
+            
+            logger, timed_out = result
+            
+            # Read the test output from the log file
+            test_output_file = log_dir / run_id / instance_id / LOG_TEST_OUTPUT
+            if test_output_file.exists():
+                test_output = test_output_file.read_text()
+            else:
+                test_output = "Test output file not found"
+            
+            # Parse test results - check for failures in the output
+            # SWE-smith uses pytest, so we look for standard pytest markers
+            passed = not timed_out and "FAILED" not in test_output and "ERROR" not in test_output
+            
+            # Also check exit code from the log if available
+            if "PASSED" in test_output or "passed" in test_output.lower():
+                passed = True
+            
+            return passed, test_output
+            
+        except Exception as e:
+            import traceback
+            return False, f"Verification error: {e}\n{traceback.format_exc()}"
 
     def cleanup(self):
         """Cleanup Docker container after run."""

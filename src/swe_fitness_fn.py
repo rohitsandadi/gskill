@@ -79,8 +79,11 @@ def create_swe_fitness_fn(model_name: str = "gpt-4o", n_workers: int = 6):
                 feedback_msg = "no_patch"
                 test_output = "No patch to test."
             else:
-                # FAIL_TO_PASS Tests - use repo profile's test command
-                f2p_passed, f2p_output = harness.verify(f2p_only=True)
+                # Use SWE-smith's run_patch_in_container for proper verification
+                # This creates a fresh container, checks out HEAD~1 (with tests), 
+                # applies the patch, and runs tests                
+                # First test FAIL_TO_PASS only
+                f2p_passed, f2p_output = harness.verify_with_patch(patch, f2p_only=True)
                 test_output = f"=== FAIL_TO_PASS TESTS ===\n{f2p_output}"
                 
                 if not f2p_passed:
@@ -91,8 +94,8 @@ def create_swe_fitness_fn(model_name: str = "gpt-4o", n_workers: int = 6):
                     pass_to_pass = task.get("PASS_TO_PASS", [])
                     
                     if pass_to_pass:
-                        # Run full test command (includes both f2p and p2p)
-                        p2p_passed, p2p_output = harness.verify(f2p_only=False)
+                        # Run full test (includes both f2p and p2p)
+                        p2p_passed, p2p_output = harness.verify_with_patch(patch, f2p_only=False)
                         test_output += f"\n\n=== FULL TEST SUITE ===\n{p2p_output}"
                         
                         if not p2p_passed:
@@ -136,6 +139,15 @@ def create_swe_fitness_fn(model_name: str = "gpt-4o", n_workers: int = 6):
             
             status = "✓ PASS" if passed else f"✗ FAIL ({feedback_msg})"
             print(f"  [{instance_id[:30]}] {status}", flush=True)
+            
+            # Show brief debug info on failure
+            if not passed:
+                # Extract last few lines of test output for quick debugging
+                output_lines = test_output.strip().split('\n')
+                # Get last 5 non-empty lines
+                relevant_lines = [l for l in output_lines if l.strip()][-5:]
+                if relevant_lines:
+                    print(f"    Last output: {relevant_lines[-1][:100]}", flush=True)
             
             # Cleanup
             harness.cleanup()
