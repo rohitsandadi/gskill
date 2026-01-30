@@ -1,8 +1,17 @@
 import gc
 import os
 import yaml
+import logging
 from dataclasses import dataclass
 from typing import Tuple, Dict, Any
+
+# Suppress verbose LiteLLM logging
+logging.getLogger("LiteLLM").setLevel(logging.WARNING)
+logging.getLogger("litellm").setLevel(logging.WARNING)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
+import litellm
+litellm.suppress_debug_info = True
 
 from minisweagent.agents.default import DefaultAgent
 from minisweagent.models.litellm_model import LitellmModel
@@ -139,7 +148,7 @@ class SWEHarness:
             "format_error_template", "timeout_template", "step_limit", "cost_limit"
         ]
         agent_config = {k: v for k, v in full_agent_config.items() if k in supported_fields}
-        agent_config["step_limit"] = 30  # Reasonable limit for each task
+        agent_config["step_limit"] = 50  # Max steps per task
         
         # Get model kwargs from config and add OpenAI regional endpoint if needed
         model_config = config.get("model", {})

@@ -67,8 +67,6 @@ def create_swe_fitness_fn(model_name: str = "gpt-4o", n_workers: int = 6):
                 problem, skills, model_name=model_name
             )
             
-            # Debug: Quick summary of agent run
-            print(f"  Agent finished: steps={agent_metrics.get('steps', 0)}, msgs={agent_metrics.get('num_messages', 0)}, patch_len={len(patch)}")
 
             # 3. Verify with tests
             has_patch = len(patch.strip()) > 0
@@ -78,11 +76,8 @@ def create_swe_fitness_fn(model_name: str = "gpt-4o", n_workers: int = 6):
 
             if not has_patch:
                 passed = False
-                feedback_msg = "Agent did not produce any valid patch (git diff was empty)."
+                feedback_msg = "no_patch"
                 test_output = "No patch to test."
-                # Debug: Print first part of agent trace to see what happened
-                print(f"  DEBUG: No patch produced. Agent trace preview:")
-                print(f"  {agent_trace[:500]}..." if len(agent_trace) > 500 else f"  {agent_trace}")
             else:
                 # FAIL_TO_PASS Tests
                 fail_to_pass = task.get("FAIL_TO_PASS", [])
@@ -96,7 +91,7 @@ def create_swe_fitness_fn(model_name: str = "gpt-4o", n_workers: int = 6):
                 
                 if not f2p_passed:
                     passed = False
-                    feedback_msg = "FAIL_TO_PASS tests failed - the fix does not solve the issue."
+                    feedback_msg = "f2p_failed"
                 else:
                     # PASS_TO_PASS Tests (Regression Check)
                     pass_to_pass = task.get("PASS_TO_PASS", [])
@@ -111,13 +106,13 @@ def create_swe_fitness_fn(model_name: str = "gpt-4o", n_workers: int = 6):
                         
                         if not p2p_passed:
                             passed = False
-                            feedback_msg = "PASS_TO_PASS regression failed - the fix breaks existing tests."
+                            feedback_msg = "p2p_regression"
                         else:
                             passed = True
-                            feedback_msg = "All tests passed (FAIL_TO_PASS fixed + PASS_TO_PASS still passing)."
+                            feedback_msg = "all_passed"
                     else:
                         passed = True
-                        feedback_msg = "FAIL_TO_PASS tests passed. No PASS_TO_PASS tests to check."
+                        feedback_msg = "f2p_passed"
 
             score = 1.0 if passed else 0.0
             
@@ -148,7 +143,7 @@ def create_swe_fitness_fn(model_name: str = "gpt-4o", n_workers: int = 6):
                 }
             }
             
-            status = "✓ PASS" if passed else "✗ FAIL"
+            status = "✓ PASS" if passed else f"✗ FAIL ({feedback_msg})"
             print(f"  [{instance_id[:30]}] {status}", flush=True)
             
             # Cleanup

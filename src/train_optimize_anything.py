@@ -13,6 +13,10 @@ import logging
 from pathlib import Path
 from dotenv import load_dotenv
 
+# Suppress verbose LiteLLM logging
+logging.getLogger("LiteLLM").setLevel(logging.WARNING)
+logging.getLogger("litellm").setLevel(logging.WARNING)
+
 # Load environment variables
 load_dotenv()
 
@@ -22,6 +26,133 @@ from gepa.utils.stop_condition import TimeoutStopCondition
 from src.swe_fitness_fn import create_swe_fitness_fn
 from src.cost_tracker import reset_tracker
 from src.experiment_logger import ExperimentLogger, set_logger
+import re
+import litellm
+
+
+def create_logging_proposer(run_dir: Path, reflection_lm: str):
+    """Create a proposer that logs all inputs/outputs to separate files."""
+    
+    proposer_dir = run_dir / "proposer_calls"
+    proposer_dir.mkdir(parents=True, exist_ok=True)
+    call_counter = [0]  # Mutable counter
+    
+    # Custom prompt for learning terminal and repo-specific skills
+    prompt_template = """You are helping an AI coding agent learn skills for fixing bugs in a software repository.
+
+The agent operates inside a Docker container with:
+- The repository cloned at /testbed
+- Access to bash commands (grep, find, cat, sed, python, pytest, git, etc.)
+- The ability to read, edit, and create files
+
+## Current Skills
+The agent currently has these learned skills:
+```
+{curr_skills}
+```
+
+## Evaluation Results
+Below are results from the agent attempting to fix bugs using the current skills. Each entry shows:
+- The problem statement (bug description)
+- The agent's actions and reasoning
+- Whether the fix succeeded or failed
+- Test output and error messages
+
+```
+{evaluation_data}
+```
+
+## Your Task
+Analyze the evaluation results and propose IMPROVED SKILLS that will help the agent:
+
+1. **Terminal/Bash Skills**: Common command patterns, file navigation, searching code, running tests
+2. **Repository-Specific Knowledge**: Project structure, key modules, common patterns in this codebase
+3. **Debugging Strategies**: How to locate bugs, understand test failures, verify fixes
+4. **Code Editing Patterns**: Safe ways to modify files, handle imports, avoid syntax errors
+
+Focus on:
+- Patterns that led to SUCCESS - reinforce these
+- Patterns that led to FAILURE - what should the agent do differently?
+- Missing knowledge that would have helped
+- Common mistakes to avoid
+
+Write the improved skills as clear, actionable instructions. Be specific and concrete.
+Keep skills concise but comprehensive. The agent will see these skills before each task.
+
+Provide the new skills within ``` blocks."""
+
+    def logging_proposer(
+        candidate: dict,
+        reflective_dataset: dict,
+        components_to_update: list
+    ) -> dict:
+        """Custom proposer that logs inputs/outputs to separate files."""
+        call_counter[0] += 1
+        call_num = call_counter[0]
+        
+        results = {}
+        
+        for component in components_to_update:
+            curr_value = candidate.get(component, "")
+            side_info = reflective_dataset.get(component, [])
+            
+            # Format side info as string
+            side_info_str = json.dumps(side_info, indent=2, default=str)
+            
+            # Format the prompt
+            prompt = prompt_template.format(
+                curr_skills=curr_value if curr_value else "(No skills learned yet)",
+                evaluation_data=side_info_str
+            )
+            
+            # Prepare log entry
+            log_entry = {
+                "call_num": call_num,
+                "component": component,
+                "current_skills": curr_value,
+                "evaluation_data": side_info,
+                "full_prompt": prompt,
+            }
+            
+            # Call the reflection LLM
+            try:
+                response = litellm.completion(
+                    model=reflection_lm,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.7,
+                )
+                response_text = response.choices[0].message.content
+                
+                # Extract new value from ``` blocks
+                match = re.search(r'```(?:\w*\n)?(.*?)```', response_text, re.DOTALL)
+                new_value = match.group(1).strip() if match else response_text.strip()
+                
+                log_entry["llm_response"] = response_text
+                log_entry["new_skills"] = new_value
+                log_entry["success"] = True
+                
+                results[component] = new_value
+                
+            except Exception as e:
+                log_entry["error"] = str(e)
+                log_entry["success"] = False
+                results[component] = curr_value  # Keep current on error
+            
+            # Write to separate file for this call
+            call_file = proposer_dir / f"call_{call_num:03d}.json"
+            with open(call_file, "w") as f:
+                json.dump(log_entry, f, indent=2, default=str)
+            
+            # Also print summary
+            print(f"\n[PROPOSER] Call {call_num} for '{component}':")
+            print(f"  Current skills: {len(curr_value)} chars")
+            print(f"  Evaluation items: {len(side_info)}")
+            print(f"  New skills: {len(results.get(component, ''))} chars")
+            print(f"  Saved to: {call_file}")
+        
+        return results
+    
+    return logging_proposer
 
 def load_split_data(split_name="train", limit=None):
     """
@@ -190,6 +321,9 @@ def main():
     if "openai" in reflection_model.lower() or reflection_model.startswith("gpt-"):
         os.environ["OPENAI_API_BASE"] = "https://us.api.openai.com/v1"
 
+    # Create logging proposer to capture all proposer calls
+    logging_proposer = create_logging_proposer(run_dir, reflection_model)
+    
     config = GEPAConfig(
         engine=EngineConfig(
             run_dir=str(run_dir),
@@ -203,6 +337,7 @@ def main():
             reflection_minibatch_size=3,
             skip_perfect_score=True,
             perfect_score=1.0,
+            custom_candidate_proposer=logging_proposer,
         ),
         tracking=TrackingConfig(
             use_wandb=args.wandb,

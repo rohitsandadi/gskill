@@ -6,6 +6,10 @@ import logging
 from pathlib import Path
 from dotenv import load_dotenv
 
+# Suppress verbose LiteLLM logging
+logging.getLogger("LiteLLM").setLevel(logging.WARNING)
+logging.getLogger("litellm").setLevel(logging.WARNING)
+
 # Load environment variables
 load_dotenv()
 
@@ -262,9 +266,9 @@ def main():
     tracker.print_summary()
 
     # Save experiment summary with before/after comparison
-    best_prompt = result.best_candidate.get("skills", "")
+    best_skills = result.best_candidate.get("skills", "")
     exp_logger.save_summary(
-        best_prompt=best_prompt,
+        best_prompt=best_skills,  # experiment_logger still uses best_prompt param name
         extra_info={
             "model": args.model,
             "reflection_model": reflection_model,
