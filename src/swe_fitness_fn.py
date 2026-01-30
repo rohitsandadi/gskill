@@ -126,11 +126,11 @@ def create_swe_fitness_fn(model_name: str = "gpt-4o", n_workers: int = 6):
                 },
                 "Generated Outputs": {
                     "Patch": patch[:500] + "..." if len(patch) > 500 else patch,
-                    "Agent Trace": agent_trace[:1000] + "..." if len(agent_trace) > 1000 else agent_trace,
+                    "Agent Trace": agent_trace,
                 },
                 "Feedback": {
                     "Status": feedback_msg,
-                    "Test Output": test_output[:1000] + "..." if len(test_output) > 1000 else test_output,
+                    "Test Output": test_output[:500] + "..." + test_output[-500:] if len(test_output) > 1000 else test_output,
                 },
                 "scores": {
                     "correctness": score,

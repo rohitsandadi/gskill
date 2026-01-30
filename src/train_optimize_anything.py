@@ -123,10 +123,11 @@ Focus on:
 - Missing knowledge that would have helped
 - Common mistakes to avoid
 
-Write the improved skills as clear, actionable instructions. Be specific and concrete.
-Keep skills concise but comprehensive. The agent will see these skills before each task.
+Write the improved skills as clear, actionable instructions. Be specific and concrete. Remember the agent will not be evaluated on the same task, but they are expected to use the skills to fix other tasks in the SAME repository.
+If any older skills are still helpful, include them as well. However, always keep the overall skills concise and comprehensive.
+Adding skills blindly will not help the agent, so only add skills that are actually helpful.
 
-Provide the new skills within ``` blocks."""
+Provide the new skills within a SINGLE ``` block. Only include one ``` block, if you include multiple ``` blocks, the agent will not be able to parse the response."""
 
     def logging_proposer(
         candidate: dict,
@@ -297,6 +298,8 @@ def main():
     parser.add_argument("--smoke-test", action="store_true", help="Run a quick smoke test")
     parser.add_argument("--eval-test", action="store_true", 
                         help="Evaluate on test set before and after optimization")
+    parser.add_argument("--resume", type=str, default=None,
+                        help="Resume from a previous run directory (e.g., gepa_results/logs/run_XXXXXXXX)")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose logging")
     parser.add_argument("--timeout", type=int, default=43200, help="Max seconds to run (default: 12 hours)")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
@@ -312,11 +315,45 @@ def main():
         args.test_size = 2
         args.max_metric_calls = 20
         print("SMOKE TEST MODE")
+    
+    # Handle resume from previous run
+    resumed_from = None
+    if args.resume:
+        resume_dir = Path(args.resume)
+        if not resume_dir.exists():
+            print(f"ERROR: Resume directory not found: {resume_dir}")
+            sys.exit(1)
+        
+        state_file = resume_dir / "gepa_state.bin"
+        if not state_file.exists():
+            print(f"ERROR: No gepa_state.bin found in {resume_dir}")
+            sys.exit(1)
+        
+        # Load previous config to get consistent parameters
+        prev_config_file = resume_dir / "config.json"
+        if prev_config_file.exists():
+            with open(prev_config_file) as f:
+                prev_config = json.load(f)
+            # Use same repo and seed for data consistency
+            args.repo = prev_config.get("repo", args.repo)
+            args.seed = prev_config.get("seed", args.seed)
+            print(f"RESUME MODE: Loading state from {resume_dir}")
+            print(f"  Using repo={args.repo}, seed={args.seed} from previous run")
+        
+        resumed_from = str(resume_dir)
 
     # Initialize experiment logger FIRST to get run_id
     exp_logger = ExperimentLogger(log_dir="gepa_results/logs")
     set_logger(exp_logger)
     run_dir = exp_logger.log_dir
+    
+    # If resuming, copy the state file to the new run directory
+    if resumed_from:
+        import shutil
+        src_state = Path(resumed_from) / "gepa_state.bin"
+        dst_state = run_dir / "gepa_state.bin"
+        shutil.copy2(src_state, dst_state)
+        print(f"Copied state file from {src_state} to {dst_state}")
 
     # Setup output tee - capture all stdout/stderr to terminal.log
     terminal_log = run_dir / "terminal.log"
@@ -346,6 +383,8 @@ def main():
     print(f"Reflection Model: {args.reflection_model}")
     print(f"Workers: {args.workers} (Docker containers)")
     print(f"Run directory: {run_dir}")
+    if resumed_from:
+        print(f"Resumed from: {resumed_from}")
     print("="*70 + "\n")
 
     # 1. Load Data - directly from HuggingFace, split with shuffle
@@ -377,6 +416,7 @@ def main():
         "seed": args.seed,
         "timeout": args.timeout,
         "eval_test": args.eval_test,
+        "resumed_from": resumed_from,
         "execution_mode": "docker",
         "wandb": args.wandb,
         "wandb_project": args.wandb_project if args.wandb else None,
@@ -446,7 +486,7 @@ def main():
 
     # 6. Baseline evaluation (before optimization)
     baseline_test_results = None
-    if args.eval_test:
+    if args.eval_test and not resumed_from:
         baseline_test_results = evaluate_on_test(
             fitness_fn, seed_candidate, test_data, name="Baseline (before optimization)"
         )
@@ -481,8 +521,10 @@ def main():
         # It's an object with .candidate attribute
         best_skills = best_candidate_dict.candidate["skills"]
     
-    # Get best score from history
-    best_score = max([item.score for item in result.history]) if result.history else 0.0
+    # Get best score from result
+    best_idx = result.best_idx
+    best_score = result.val_aggregate_scores[best_idx] if result.val_aggregate_scores else 0.0
+    num_candidates = result.num_candidates
     
     print(f"\nBest Prompt (Score: {best_score:.2%}):")
     print("-" * 70)
@@ -523,7 +565,8 @@ def main():
     # Summary
     summary_data = {
         "best_score": float(best_score),
-        "total_iterations": len(result.history),
+        "num_candidates": num_candidates,
+        "total_metric_calls": result.total_metric_calls,
         "final_skills_length": len(best_skills),
     }
     if baseline_test_results:
@@ -531,11 +574,12 @@ def main():
     if optimized_test_results:
         summary_data["optimized_test_score"] = optimized_test_results['avg_score']
     
-    exp_logger.save_summary(summary_data)
+    exp_logger.save_summary(best_prompt=best_skills, extra_info=summary_data)
     
     print(f"\nSummary:")
     print(f"  Best Val Score: {best_score:.2%}")
-    print(f"  Total Iterations: {len(result.history)}")
+    print(f"  Candidates Generated: {num_candidates}")
+    print(f"  Total Metric Calls: {result.total_metric_calls}")
     print(f"  Final Skills Length: {len(best_skills)} chars")
     if optimized_test_results:
         print(f"  Test Score: {optimized_test_results['avg_score']:.1%}")
