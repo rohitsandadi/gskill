@@ -139,7 +139,7 @@ def create_swe_fitness_fn(model_name: str = "gpt-5-mini", n_workers: int = 6):
             }
             
             status = "✓ PASS" if passed else f"✗ FAIL ({feedback_msg})"
-            print(f"  [{instance_id[:30]}] {status}", flush=True)
+            print(f"  [{instance_id[:30]}] {status} [steps: {agent_metrics.get('steps', 0)}]", flush=True)
             
             # Show brief debug info on failure
             if not passed:

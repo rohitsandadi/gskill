@@ -93,7 +93,7 @@ class ExperimentLogger:
             self.run_id = run_name
         elif repo:
             # Extract short repo name (e.g., "pygments" from "pygments__pygments")
-            short_repo = repo.split("__")[0] if "__" in repo else repo.split("/")[-1]
+            short_repo = repo.split("__")[1]
             self.run_id = f"run_{short_repo}_{timestamp}_{short_id}"
         else:
             self.run_id = f"run_{timestamp}_{short_id}"
