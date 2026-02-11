@@ -224,7 +224,8 @@ class SWEHarness:
             metrics = {
                 "steps": num_steps,
                 "estimated_tokens": token_count,
-                "num_messages": len(agent.messages)
+                "num_messages": len(agent.messages),
+                "messages": list(agent.messages),  # Structured messages for trace logging
             }
 
             # Generate patch of changes from Docker container
@@ -294,7 +295,14 @@ class SWEHarness:
             if test_output_file.exists():
                 test_output = test_output_file.read_text()
             else:
-                test_output = "Test output file not found"
+                # Test output file not found means tests never ran (e.g., patch apply failed)
+                # Check the run_instance.log for more details
+                run_log = Path(log_dir) / run_id / instance_id / "run_instance.log"
+                if run_log.exists():
+                    run_log_content = run_log.read_text()
+                    if "Patch Apply Failed" in run_log_content:
+                        return False, f"Patch Apply Failed. See {run_log}"
+                return False, "Test output file not found - tests never ran"
             
             # Parse test results - check for failures in the output
             # SWE-smith uses pytest, so we look for standard pytest markers
@@ -303,6 +311,10 @@ class SWEHarness:
             # Also check exit code from the log if available
             if "PASSED" in test_output or "passed" in test_output.lower():
                 passed = True
+            
+            # Double-check for patch apply failures in test output
+            if "Patch Apply Failed" in test_output:
+                passed = False
             
             return passed, test_output
             

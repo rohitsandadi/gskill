@@ -168,9 +168,19 @@ Provide the new skills within a SINGLE ``` block. Only include one ``` block, if
         """Extract skills from LLM response.
         
         Override this method to customize extraction logic.
+        Matches from the first ``` to the last ``` to handle nested backtick references.
         """
-        match = re.search(r'```(?:\w*\n)?(.*?)```', response_text, re.DOTALL)
-        return match.group(1).strip() if match else response_text.strip()
+        # Find the first code fence (with optional language tag)
+        first = re.search(r'```(?:\w*\n)?', response_text)
+        if not first:
+            return response_text.strip()
+        
+        # Find the last occurrence of ``` to handle nested backtick references
+        last_pos = response_text.rfind('```')
+        if last_pos <= first.end():
+            return response_text.strip()
+        
+        return response_text[first.end():last_pos].strip()
     
     def log_call(self, call_num: int, log_entry: dict) -> Path:
         """Log the call to a file and return the file path.
