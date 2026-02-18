@@ -32,7 +32,7 @@ from swebench.harness.constants import (
 
 # Import all shared utilities from the original evaluate_claude_code module.
 # This avoids duplicating data loading, image management, verification, etc.
-from src.evaluate_claude_code import (
+from src.evaluate.claude_code import (
     # Data loading (identical splits)
     load_and_split_data,
     load_testset_from_config,
