@@ -1,5 +1,8 @@
 """
 Training script using GEPA optimize_anything API.
+
+This is the recommended API - cleaner, more maintainable than the original.
+Uses structured GEPAConfig and FitnessFn protocol instead of GEPAAdapter.
 """
 
 import os
