@@ -49,6 +49,8 @@ archive/
 example/
 scripts/
 docs/
+src/legacy/
+src/evaluate/prompts.py
 
 # ----- Misc -----
 *.log
