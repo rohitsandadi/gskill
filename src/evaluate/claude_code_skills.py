@@ -8,7 +8,7 @@ instead of plain CLAUDE.md files.
 See: https://code.claude.com/docs/en/skills
 
 Usage is identical to evaluate_claude_code.py:
-  python -m src.evaluate_claude_code_skills --config gepa_results/logs/run_xxx/config.json --use-skills
+  python -m src.evaluate.claude_code_skills --config gepa_results/logs/run_xxx/config.json --use-skills
 """
 
 import os
@@ -431,10 +431,10 @@ See: https://code.claude.com/docs/en/skills
 
 Examples:
   # Evaluate with proper Claude Code skills
-  python -m src.evaluate_claude_code_skills --config gepa_results/logs/run_xxx/config.json --use-skills
+  python -m src.evaluate.claude_code_skills --config gepa_results/logs/run_xxx/config.json --use-skills
 
   # Evaluate without skills (identical to evaluate_claude_code.py)
-  python -m src.evaluate_claude_code_skills --config gepa_results/logs/run_xxx/config.json
+  python -m src.evaluate.claude_code_skills --config gepa_results/logs/run_xxx/config.json
 """,
     )
 

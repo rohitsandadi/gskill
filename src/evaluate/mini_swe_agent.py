@@ -6,7 +6,7 @@ in two modes: (1) with learned skills, and (2) without skills (baseline).
 Only tasks with non-empty problem statements are evaluated.
 
 Usage:
-    python -m src.evaluate_mini_swe_agent \
+    python -m src.evaluate.mini_swe_agent \
         --config gepa_results/logs/run_blevesearch_20260131_131944_d7b877_final/config.json \
         --workers 16 \
         --limit 100
