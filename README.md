@@ -121,7 +121,5 @@ Results saved to `gepa_results/logs/run_<timestamp>_<id>/`:
 
 ## References
 
-- [GEPA Paper](https://arxiv.org/abs/2507.19457)
-- [GEPA Docs](https://gepa-ai.github.io/gepa/)
 - [SWE-smith](https://swesmith.com)
 - [mini-SWE-agent](https://github.com/SWE-agent/mini-swe-agent)
