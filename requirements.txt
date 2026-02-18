@@ -1,21 +1,19 @@
-# GEPA + SWE-smith + Mini-SWE-Agent (Docker Mode)
+# GEPA + SWE-smith + Mini-SWE-Agent
 
 # GEPA - Genetic-Pareto prompt optimization framework
--e /home/eecs/shangyin/gepa-optimize-anything
+gepa
 
-# SWE-smith - Dataset toolkit with Docker container support
-# Install: pip install swesmith
-# Or from source: git clone https://github.com/SWE-bench/SWE-smith.git && cd SWE-smith && pip install -e .
+# SWE-smith / SWE-bench
 swesmith
-swebench  # Required by swesmith but not declared as dependency
+swebench
 
-# Mini-SWE-Agent - Lightweight agent for solving GitHub issues
+# Mini-SWE-Agent
 mini-swe-agent
 
-# Docker SDK for Python - Required
+# Docker SDK
 docker
 
-# HuggingFace datasets - For loading SWE-smith data
+# HuggingFace datasets
 datasets
 
 # LiteLLM - LLM API abstraction
@@ -29,3 +27,4 @@ pandas
 numpy
 tqdm
 pytest
+pyyaml

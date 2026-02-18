@@ -1,11 +1,10 @@
 # ================================
-# GEPA + SWE-smith Integration
-# .gitignore
+# GEPA + SWE-smith  .gitignore
 # ================================
 
 # ----- Secrets & Environment -----
 .env
-.env.local
+.env.*
 *.env
 
 # ----- Python -----
@@ -15,19 +14,8 @@ __pycache__/
 *.so
 .Python
 build/
-develop-eggs/
 dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
 *.egg-info/
-.installed.cfg
 *.egg
 
 # ----- Virtual Environment -----
@@ -44,12 +32,11 @@ env/
 *~
 .DS_Store
 
-# ----- GEPA Results (generated) -----
-# Keep empty directory but ignore contents
-gepa_results/*.log
-gepa_results/*.bin
-gepa_results/*.txt
-gepa_results/generated_best_outputs_valset/
+# ----- Generated Results -----
+gepa_results/
+logs/
+logarchive/
+wandb/
 
 # ----- Data (large files) -----
 data/*.json
@@ -57,15 +44,15 @@ data/*.json
 # ----- Workspace repos (cloned for testing) -----
 /tmp/gepa_workenvs/
 
+# ----- Excluded directories -----
+archive/
+example/
+scripts/
+docs/
+src/legacy/
+src/evaluate/prompts.py
+
 # ----- Misc -----
 *.log
 *.tmp
 .cache/
-
-# ----- Archive (optional - uncomment to ignore) -----
-# archive/
-archive/
-gepa_results/
-
-logs/
-wandb/
