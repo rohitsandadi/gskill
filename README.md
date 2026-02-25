@@ -4,6 +4,8 @@
   <em>Given any GitHub repository, gskill creates important agent skill files for coding agents.</em>
 </p>
 
+> **gskill now lives in the main GEPA repo at [`src/gepa/gskill/`](https://github.com/gepa-ai/gepa/tree/main/src/gepa/gskill).** Check out our recently published [blog post on gskill](https://gepa-ai.github.io/gepa/blog/2026/02/18/automatically-learning-skills-for-coding-agents/)!
+
 ## Overview
 
 gskill learns repository-specific skills for coding agents. On a GitHub repository it automatically discovers the common patterns, structures, and debugging strategies that matter for that repo, then produces a skill file that makes agents better at fixing bugs in it.
